@@ -5,17 +5,50 @@ subscription plan and accumulates the cost within the current billing cycle.
 
 Java 21, Spring Boot 3.5, PostgreSQL, Flyway, Testcontainers.
 
-## Assignment
+## Problem
 
-Build a microservice for a mobile operator that ingests Call Detail Records (calls in seconds, SMS
-by count, data in MB) and rates them in real time against the customer's subscription plan:
-STANDARD ($0.05/min, $0.01/SMS) or PREMIUM (100 free minutes and 20 free SMS per cycle, then
-$0.03/min and $0.01/SMS), with data at $2.00/GB billed proportionally for all plans. Costs and
-free quotas accumulate per calendar-month billing cycle (UTC) based on the event timestamp, not the
-processing time. Processing must be idempotent by `eventId`, safe under concurrent CDRs for the same
-customer, and precise for money. Reporting covers unbilled charges, remaining free quotas and the
-top 10 customers by cost in the current cycle. The design should follow DDD with clear Rating and
-Billing boundaries and allow new pricing rules with minimal changes.
+A mobile operator's network produces a Call Detail Record (CDR) for every call, SMS and data
+session. The service has to turn that stream into money: price each record against the customer's
+plan the moment it arrives and keep a running bill for the month, so support and customers always
+see an up-to-date balance and remaining allowance.
+
+### Pricing rules
+
+| Usage | Unit             | STANDARD     | PREMIUM                                   |
+|-------|------------------|--------------|-------------------------------------------|
+| Calls | seconds          | $0.05 / min  | 100 free min per cycle, then $0.03 / min  |
+| SMS   | count            | $0.01 / SMS  | 20 free SMS per cycle, then $0.01 / SMS   |
+| Data  | MB               | $2.00 / GB   | $2.00 / GB                                |
+
+Calls and data are billed proportionally, not rounded up to whole minutes or gigabytes.
+
+### Billing rules
+
+- A billing cycle is a calendar month in UTC.
+- A CDR belongs to the cycle of its **event timestamp**, not of the moment it was processed, so a
+  record that arrives late is still charged to the right month.
+- Free allowances reset at the start of each cycle.
+
+### Guarantees
+
+The hard part is not the arithmetic but correctness under real-world delivery:
+
+- **Idempotent by `eventId`.** Network elements retry, so the same CDR can arrive more than once;
+  it must be charged exactly once.
+- **Safe under concurrency.** CDRs for the same customer can arrive in parallel; no charge or
+  consumed allowance may be lost.
+- **Exact money.** No floating-point arithmetic; rounding happens once, at the API boundary.
+
+### Reports
+
+- Unbilled charges of a customer in the current cycle.
+- Remaining free minutes and SMS of a customer.
+- Top 10 customers by cost in the current cycle.
+
+### Design constraints
+
+Domain-driven design with separate Rating and Billing boundaries, and new pricing rules (night
+tariffs, promotions, volume discounts) added with minimal changes to existing code.
 
 ## Highlights
 
@@ -32,10 +65,9 @@ Billing boundaries and allow new pricing rules with minimal changes.
 
 ## Running
 
-The image packages an already built jar, so the application is built first:
+Only Docker is required; the application is compiled inside the image:
 
 ```bash
-./mvnw clean package -DskipTests
 docker compose up --build -d
 ```
 
