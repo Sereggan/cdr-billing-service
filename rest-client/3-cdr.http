@@ -1,0 +1,99 @@
+### Rate a call: 120 seconds on the STANDARD plan
+# 2 minutes x $0.03 = $0.06
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "1e1d2b1f-2801-428d-a819-b745f91c9b07",
+  "customerId": 1,
+  "type": "CALL",
+  "quantity": 120,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+### Rate SMS: 5 messages on the STANDARD plan
+# 5 x $0.01 = $0.05
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": 1,
+  "type": "SMS",
+  "quantity": 5,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+### Rate data: 512 MB
+# 512 / 1024 GB x $2.00 = $1.00, the same rate on every plan
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": 1,
+  "type": "DATA",
+  "quantity": 512,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+### Billing cycle follows the event timestamp, not the arrival time
+# Sent today, but booked into the March 2026 cycle, so it is invisible to the
+# current-cycle reports.
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": 1,
+  "type": "CALL",
+  "quantity": 600,
+  "timestamp": "2026-03-31T23:59:59Z"
+}
+
+### Error: the customer does not exist
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": 999999,
+  "type": "CALL",
+  "quantity": 60,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+### Error: a negative quantity
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": 1,
+  "type": "CALL",
+  "quantity": -1,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+### Error: an unknown usage type
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": 1,
+  "type": "TELEPATHY",
+  "quantity": 1,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+### Error: a missing required field
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "customerId": 1,
+  "type": "SMS",
+  "quantity": 1,
+  "timestamp": "{{$isoTimestamp}}"
+}

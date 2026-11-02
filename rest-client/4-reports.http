@@ -1,0 +1,18 @@
+### Unbilled charges of the current billing cycle
+
+GET {{host}}/v1/customers/1/unbilled-charges
+Accept: application/json
+
+### Remaining free quotas, PREMIUM plan
+# The PREMIUM plan grants 100 free call minutes and 20 free SMS per cycle,
+# the response shows what is left of them after the seeded usage.
+GET {{host}}/v1/customers/6/free-quotas
+Accept: application/json
+
+### Top 10 customers of the current billing cycle
+GET {{host}}/v1/reports/top-customers
+Accept: application/json
+
+### Error: free quotas of an unknown customer
+GET {{host}}/v1/customers/999999/free-quotas
+Accept: application/json

@@ -1,0 +1,25 @@
+### Register a STANDARD customer
+# The id is stored globally so that the CDR and report requests can reuse it.
+POST {{host}}/v1/customers
+Content-Type: application/json
+
+{
+  "email": "standard-{{$timestamp}}@example.com",
+  "name": "Bob Standard",
+  "plan": "STANDARD"
+}
+
+### Register a PREMIUM customer
+POST {{host}}/v1/customers
+Content-Type: application/json
+
+{
+  "email": "premium-{{$timestamp}}@example.com",
+  "name": "Alice Premium",
+  "plan": "PREMIUM"
+}
+
+
+### Get a customer by id
+GET {{host}}/v1/customers/1
+Accept: application/json

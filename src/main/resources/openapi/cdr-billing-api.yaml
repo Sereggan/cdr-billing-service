@@ -1,0 +1,477 @@
+openapi: 3.0.3
+info:
+  title: CDR Billing Service API
+  description: Telco usage and rating engine - subscription management.
+  version: 1.0.0
+
+servers:
+  - url: /
+
+tags:
+  - name: customers
+    description: Customer subscription management
+  - name: plans
+    description: Subscription plans
+  - name: cdr
+    description: Call Detail Record processing and rating
+  - name: reports
+    description: Billing cycle reporting
+
+paths:
+  /v1/cdr:
+    post:
+      tags:
+        - cdr
+      summary: Submit a Call Detail Record for rating
+      description: >-
+        Ingests a usage event (call, SMS or data) and applies it to the
+        customer's billing cycle. Idempotent by eventId: a repeated event is
+        acknowledged without any side effects.
+      operationId: submitCdr
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CdrRequest'
+      responses:
+        '201':
+          description: Event processed and rated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CdrResponse'
+        '200':
+          description: Duplicate event, acknowledged without side effects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CdrResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /v1/customers:
+    post:
+      tags:
+        - customers
+      summary: Register a new customer
+      operationId: registerCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterCustomerRequest'
+      responses:
+        '201':
+          description: Customer registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /v1/customers/{customerId}:
+    get:
+      tags:
+        - customers
+      summary: Get a customer by id
+      operationId: getCustomer
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: Customer found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /v1/plans:
+    get:
+      tags:
+        - plans
+      summary: List all subscription plans
+      operationId: getPlans
+      responses:
+        '200':
+          description: Available plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlanResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /v1/customers/{customerId}/unbilled-charges:
+    get:
+      tags:
+        - reports
+      summary: Get the unbilled charges of a customer
+      description: >-
+        Returns the total cost accumulated by the customer in the current
+        billing cycle. A customer without traffic yields a total of 0.
+      operationId: getUnbilledCharges
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: Unbilled charges of the current billing cycle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnbilledChargesResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /v1/customers/{customerId}/free-quotas:
+    get:
+      tags:
+        - reports
+      summary: Get the remaining free quotas of a customer
+      description: >-
+        Returns the free call minutes and free SMS still available in the
+        current billing cycle. Partially used minutes are rounded down.
+      operationId: getFreeQuotas
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: Remaining free quotas of the current billing cycle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FreeQuotasResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+  /v1/reports/top-customers:
+    get:
+      tags:
+        - reports
+      summary: Get the top 10 customers of the current billing cycle
+      description: >-
+        Returns at most 10 customers ranked by their accumulated cost in the
+        current billing cycle, in descending order. Customers with an equal
+        cost are ordered by id so that the ranking stays stable.
+      operationId: getTopCustomers
+      responses:
+        '200':
+          description: Ranking of the current billing cycle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopCustomersResponse'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+
+components:
+  parameters:
+    CustomerId:
+      name: customerId
+      in: path
+      required: true
+      description: Customer identifier
+      schema:
+        type: integer
+        format: int64
+
+  responses:
+    ErrorResponse:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    PlanType:
+      type: string
+      enum:
+        - STANDARD
+        - PREMIUM
+
+    UsageType:
+      type: string
+      enum:
+        - CALL
+        - SMS
+        - DATA
+
+    CdrProcessingStatus:
+      type: string
+      enum:
+        - PROCESSED
+        - DUPLICATE
+
+    CdrRequest:
+      type: object
+      required:
+        - eventId
+        - customerId
+        - type
+        - quantity
+        - timestamp
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Client-supplied idempotency key
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        customerId:
+          type: integer
+          format: int64
+          example: 1
+        type:
+          $ref: '#/components/schemas/UsageType'
+        quantity:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Call seconds, SMS count, or data volume in megabytes
+          example: 60
+        timestamp:
+          type: string
+          format: date-time
+          description: Event time, used to determine the billing cycle
+
+    CdrResponse:
+      type: object
+      required:
+        - eventId
+        - status
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          example: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+        status:
+          $ref: '#/components/schemas/CdrProcessingStatus'
+
+    RegisterCustomerRequest:
+      type: object
+      required:
+        - email
+        - name
+        - plan
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          example: alice@example.com
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: Alice
+        plan:
+          $ref: '#/components/schemas/PlanType'
+
+    CustomerResponse:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - plan
+        - createdAt
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        email:
+          type: string
+          example: alice@example.com
+        name:
+          type: string
+          example: Alice
+        plan:
+          $ref: '#/components/schemas/PlanResponse'
+        createdAt:
+          type: string
+          format: date-time
+
+    PlanResponse:
+      type: object
+      required:
+        - id
+        - type
+        - freeCallMinutes
+        - callRate
+        - freeSms
+        - smsRate
+        - dataRate
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        type:
+          $ref: '#/components/schemas/PlanType'
+        freeCallMinutes:
+          type: integer
+          format: int32
+          example: 100
+        callRate:
+          type: number
+          example: 0.0300
+        freeSms:
+          type: integer
+          format: int32
+          example: 20
+        smsRate:
+          type: number
+          example: 0.0100
+        dataRate:
+          type: number
+          example: 2.0000
+
+    BillingCycle:
+      type: string
+      description: Billing cycle the report refers to, as a calendar month in UTC
+      pattern: '^\d{4}-\d{2}$'
+      example: '2026-03'
+
+    UnbilledChargesResponse:
+      type: object
+      required:
+        - customerId
+        - totalCost
+        - billingCycle
+      properties:
+        customerId:
+          type: integer
+          format: int64
+          example: 1
+        totalCost:
+          type: number
+          description: Total cost accumulated in the billing cycle
+          example: 12.34
+        billingCycle:
+          $ref: '#/components/schemas/BillingCycle'
+
+    FreeQuotasResponse:
+      type: object
+      required:
+        - customerId
+        - freeCallMinutes
+        - freeSms
+        - billingCycle
+      properties:
+        customerId:
+          type: integer
+          format: int64
+          example: 1
+        freeCallMinutes:
+          type: integer
+          format: int32
+          description: Remaining free call minutes, rounded down
+          example: 98
+        freeSms:
+          type: integer
+          format: int32
+          description: Remaining free SMS
+          example: 15
+        billingCycle:
+          $ref: '#/components/schemas/BillingCycle'
+
+    TopCustomersResponse:
+      type: object
+      required:
+        - billingCycle
+        - customers
+      properties:
+        billingCycle:
+          $ref: '#/components/schemas/BillingCycle'
+        customers:
+          type: array
+          description: Customers ranked by total cost, descending
+          items:
+            $ref: '#/components/schemas/TopCustomerResponse'
+
+    TopCustomerResponse:
+      type: object
+      required:
+        - customerId
+        - totalCost
+      properties:
+        customerId:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: Alice
+        email:
+          type: string
+          example: alice@example.com
+        totalCost:
+          type: number
+          description: Total cost accumulated in the billing cycle
+          example: 30.00
+
+    ErrorResponse:
+      type: object
+      description: Error response payload
+      required:
+        - status
+        - title
+      properties:
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code
+          example: 404
+        title:
+          type: string
+          description: Short, human-readable summary of the error
+          example: Customer Not Found
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence
+          example: 'Customer not found: 1'
+        instance:
+          type: string
+          description: Request path that produced the error
+          example: /v1/customers/1
+        errors:
+          type: array
+          description: Field-level validation errors, when applicable
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required:
+        - field
+        - message
+      properties:
+        field:
+          type: string
+          example: email
+        message:
+          type: string
+          example: must be a well-formed email address

@@ -1,0 +1,130 @@
+
+### 1. Register a fresh PREMIUM customer
+POST {{host}}/v1/customers
+Content-Type: application/json
+
+{
+  "email": "quota-{{$timestamp}}@example.com",
+  "name": "Quota Scenario",
+  "plan": "PREMIUM"
+}
+
+> {%
+    client.test("Customer is created", function () {
+        client.assert(response.status === 201, "Expected 201, got " + response.status);
+    });
+    client.global.set("quotaCustomerId", response.body.id);
+%}
+
+### 2. The full quota is available before any traffic
+GET {{host}}/v1/customers/{{quotaCustomerId}}/free-quotas
+
+> {%
+    client.test("Full quota", function () {
+        client.assert(response.body.freeCallMinutes === 100, "Expected 100 free minutes");
+        client.assert(response.body.freeSms === 20, "Expected 20 free SMS");
+    });
+%}
+
+### 3. Consume 99 free minutes (5940 seconds)
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": {{quotaCustomerId}},
+  "type": "CALL",
+  "quantity": 5940,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+> {%
+    client.test("Event is rated", function () {
+        client.assert(response.status === 201, "Expected 201, got " + response.status);
+    });
+%}
+
+### 4. One free minute is left and nothing has been charged yet
+GET {{host}}/v1/customers/{{quotaCustomerId}}/free-quotas
+
+> {%
+    client.test("One minute left", function () {
+        client.assert(response.body.freeCallMinutes === 1, "Expected 1 free minute, got " + response.body.freeCallMinutes);
+    });
+%}
+
+### 5. A 2-minute call: the first minute is free, the second one is billed
+# 60 billable seconds = 1 min x $0.03 = $0.03
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": {{quotaCustomerId}},
+  "type": "CALL",
+  "quantity": 120,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+> {%
+    client.test("Event is rated", function () {
+        client.assert(response.status === 201, "Expected 201, got " + response.status);
+    });
+%}
+
+### 6. The call quota is now exhausted
+GET {{host}}/v1/customers/{{quotaCustomerId}}/free-quotas
+
+> {%
+    client.test("Call quota is exhausted", function () {
+        client.assert(response.body.freeCallMinutes === 0, "Expected 0 free minutes");
+        client.assert(response.body.freeSms === 20, "SMS quota must be untouched");
+    });
+%}
+
+### 7. Only the billable minute shows up in the charges
+GET {{host}}/v1/customers/{{quotaCustomerId}}/unbilled-charges
+
+> {%
+    client.test("Only the billable minute is charged", function () {
+        client.assert(response.body.totalCost === 0.03, "Expected 0.03, got " + response.body.totalCost);
+    });
+%}
+
+### 8. Send 25 SMS: 20 free, 5 billed
+# 5 x $0.01 = $0.05
+POST {{host}}/v1/cdr
+Content-Type: application/json
+
+{
+  "eventId": "{{$uuid}}",
+  "customerId": {{quotaCustomerId}},
+  "type": "SMS",
+  "quantity": 25,
+  "timestamp": "{{$isoTimestamp}}"
+}
+
+> {%
+    client.test("Event is rated", function () {
+        client.assert(response.status === 201, "Expected 201, got " + response.status);
+    });
+%}
+
+### 9. Both quotas are exhausted
+GET {{host}}/v1/customers/{{quotaCustomerId}}/free-quotas
+
+> {%
+    client.test("Both quotas are exhausted", function () {
+        client.assert(response.body.freeCallMinutes === 0, "Expected 0 free minutes");
+        client.assert(response.body.freeSms === 0, "Expected 0 free SMS");
+    });
+%}
+
+### 10. The charges accumulated across both usage types
+GET {{host}}/v1/customers/{{quotaCustomerId}}/unbilled-charges
+
+> {%
+    client.test("Charges are accumulated", function () {
+        client.assert(response.body.totalCost === 0.08, "Expected 0.08, got " + response.body.totalCost);
+    });
+%}
